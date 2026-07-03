@@ -1,7 +1,9 @@
+import type { UserRole } from '../../db/schema.js';
+
 export interface AuthUserDto {
   email: string;
   fullName: string;
-  role: 'admin' | 'superadmin' | 'agent';
+  role: UserRole;
   businessName?: string;
   phone?: string;
 }

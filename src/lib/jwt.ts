@@ -1,6 +1,6 @@
 import jwt, { type SignOptions } from 'jsonwebtoken';
 import { env } from '../config/env.js';
-import type { UserRole } from '../models/user.model.js';
+import type { UserRole } from '../db/schema.js';
 
 export interface AccessTokenPayload {
   sub: string;
@@ -10,7 +10,7 @@ export interface AccessTokenPayload {
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {
-  const options: SignOptions = { expiresIn: env.JWT_EXPIRES_IN };
+  const options: SignOptions = { expiresIn: env.JWT_EXPIRES_IN as SignOptions['expiresIn'] };
   return jwt.sign(
     {
       sub: payload.sub,

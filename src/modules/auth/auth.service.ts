@@ -1,128 +1,142 @@
-import mongoose from 'mongoose';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { AppError } from '../../common/AppError.js';
+import { db, isUniqueViolation } from '../../db/client.js';
+import { businesses, users } from '../../db/schema.js';
 import { signAccessToken } from '../../lib/jwt.js';
 import { hashPassword, verifyPassword } from '../../lib/password.js';
-import { BusinessModel, UserModel } from '../../models/index.js';
-import type { UserRole } from '../../models/user.model.js';
 import { toAuthUser, type AuthUserDto } from './auth.mapper.js';
 import type { LoginBody, RegisterBody } from './auth.validation.js';
 
-function businessIdToString(businessId: unknown): string | null {
-  if (businessId == null) return null;
-  if (businessId instanceof mongoose.Types.ObjectId) {
-    return businessId.toHexString();
-  }
-  if (typeof businessId === 'object' && '_id' in businessId) {
-    const id = (businessId as { _id: unknown })._id;
-    if (id instanceof mongoose.Types.ObjectId) return id.toHexString();
-    if (id != null) return String(id);
-  }
-  return String(businessId);
-}
+const userWithBusiness = {
+  id: users.id,
+  email: users.email,
+  passwordHash: users.passwordHash,
+  fullName: users.fullName,
+  phone: users.phone,
+  role: users.role,
+  isActive: users.isActive,
+  businessId: users.businessId,
+  businessName: businesses.name,
+};
 
-function businessNameFromPopulated(user: {
-  businessId: unknown;
-}): string | null {
-  if (
-    user.businessId &&
-    typeof user.businessId === 'object' &&
-    user.businessId !== null &&
-    'name' in user.businessId
-  ) {
-    return String((user.businessId as { name: string }).name);
-  }
-  return null;
+function selectUserWithBusiness() {
+  return db
+    .select(userWithBusiness)
+    .from(users)
+    .leftJoin(businesses, eq(users.businessId, businesses.id));
 }
 
 export class AuthService {
   async register(body: RegisterBody): Promise<{ token: string; user: AuthUserDto }> {
-    const existing = await UserModel.findOne({ email: body.email });
-    if (existing) {
+    const existing = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, body.email))
+      .limit(1);
+    if (existing.length > 0) {
       throw new AppError(409, 'Email already registered');
     }
 
-    const business = await BusinessModel.create({ name: body.businessName });
     const passwordHash = await hashPassword(body.password);
 
-    const user = await UserModel.create({
-      email: body.email,
-      passwordHash,
-      fullName: body.fullName,
-      phone: body.phone,
-      role: 'admin',
-      businessId: business._id,
-    });
+    try {
+      const { user, business } = await db.transaction(async (tx) => {
+        const [business] = await tx
+          .insert(businesses)
+          .values({ name: body.businessName })
+          .returning();
+        const [user] = await tx
+          .insert(users)
+          .values({
+            email: body.email,
+            passwordHash,
+            fullName: body.fullName,
+            phone: body.phone ?? null,
+            role: 'admin',
+            businessId: business.id,
+          })
+          .returning();
+        return { user, business };
+      });
 
-    const populated = await UserModel.findById(user._id).populate('businessId', 'name').lean();
-    if (!populated) {
-      throw new AppError(500, 'Failed to load user');
+      const token = signAccessToken({
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        businessId: business.id,
+      });
+
+      return {
+        token,
+        user: toAuthUser({
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          phone: user.phone,
+          businessName: business.name,
+        }),
+      };
+    } catch (err) {
+      // Closes the race where two requests register the same email concurrently.
+      if (isUniqueViolation(err)) {
+        throw new AppError(409, 'Email already registered');
+      }
+      throw err;
     }
-
-    const authUser = toAuthUser({
-      email: populated.email,
-      fullName: populated.fullName,
-      role: populated.role as UserRole,
-      phone: populated.phone,
-      businessName: businessNameFromPopulated(populated),
-    });
-
-    const token = signAccessToken({
-      sub: String(user._id),
-      email: user.email,
-      role: user.role as UserRole,
-      businessId: String(business._id),
-    });
-
-    return { token, user: authUser };
   }
 
   async login(body: LoginBody): Promise<{ token: string; user: AuthUserDto }> {
-    const user = await UserModel.findOne({ email: body.email }).populate('businessId', 'name');
-    if (!user || !user.isActive) {
+    const [row] = await selectUserWithBusiness().where(eq(users.email, body.email)).limit(1);
+    if (!row || !row.isActive) {
       throw new AppError(401, 'Invalid email or password');
     }
 
-    const ok = await verifyPassword(body.password, user.passwordHash);
+    const ok = await verifyPassword(body.password, row.passwordHash);
     if (!ok) {
       throw new AppError(401, 'Invalid email or password');
     }
 
-    user.lastLoginAt = new Date();
-    await user.save();
-
-    const authUser = toAuthUser({
-      email: user.email,
-      fullName: user.fullName,
-      role: user.role as UserRole,
-      phone: user.phone,
-      businessName: businessNameFromPopulated(user),
-    });
-
-    const businessId = businessIdToString(user.businessId);
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, row.id));
 
     const token = signAccessToken({
-      sub: String(user._id),
-      email: user.email,
-      role: user.role as UserRole,
-      businessId,
+      sub: row.id,
+      email: row.email,
+      role: row.role,
+      businessId: row.businessId,
     });
 
-    return { token, user: authUser };
+    return {
+      token,
+      user: toAuthUser({
+        email: row.email,
+        fullName: row.fullName,
+        role: row.role,
+        phone: row.phone,
+        businessName: row.businessName,
+      }),
+    };
   }
 
   async getMe(userId: string): Promise<{ user: AuthUserDto }> {
-    const user = await UserModel.findById(userId).populate('businessId', 'name');
-    if (!user || !user.isActive) {
+    // Tokens minted before the Postgres migration carry a Mongo ObjectId in
+    // `sub`; anything that is not a uuid must 401 instead of erroring in the DB.
+    if (!z.string().uuid().safeParse(userId).success) {
+      throw new AppError(401, 'Unauthorized');
+    }
+
+    const [row] = await selectUserWithBusiness().where(eq(users.id, userId)).limit(1);
+    if (!row || !row.isActive) {
       throw new AppError(401, 'Unauthorized');
     }
 
     return {
       user: toAuthUser({
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role as UserRole,
-        phone: user.phone,
-        businessName: businessNameFromPopulated(user),
+        email: row.email,
+        fullName: row.fullName,
+        role: row.role,
+        phone: row.phone,
+        businessName: row.businessName,
       }),
     };
   }
