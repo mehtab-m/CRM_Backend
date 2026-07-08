@@ -6,5 +6,6 @@ export * from './businesses.js';
 export * from './users.js';
 export * from './customers.js';
 export * from './conversations.js';
+export * from './categories.js';
 export * from './products.js';
 export * from './orders.js';

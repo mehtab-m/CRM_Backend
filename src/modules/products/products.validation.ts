@@ -14,6 +14,7 @@ export const createProductBodySchema = z.object({
   category: z.string().min(1).max(100),
   description: z.string().max(5000).optional(),
   imageUrl: z.union([z.string().url(), z.literal('')]).optional(),
+  images: z.array(z.string().min(1)).max(5).optional(),
   price: z.number().int().min(0),
   stock: z.number().int().min(0),
   status: z.enum(productStatuses).optional(),

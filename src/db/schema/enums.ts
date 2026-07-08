@@ -15,3 +15,12 @@ export const orderStatusEnum = pgEnum('order_status', orderStatuses);
 export const productStatuses = ['active', 'out_of_stock'] as const;
 export type ProductStatus = (typeof productStatuses)[number];
 export const productStatusEnum = pgEnum('product_status', productStatuses);
+
+export const conversationStatuses = ['active', 'pending', 'resolved'] as const;
+export type ConversationStatus = (typeof conversationStatuses)[number];
+export const conversationStatusEnum = pgEnum('conversation_status', conversationStatuses);
+
+// Backend stores 'vip'; the frontend relabels it to "Premium".
+export const customerTiers = ['new', 'regular', 'vip'] as const;
+export type CustomerTier = (typeof customerTiers)[number];
+export const customerTierEnum = pgEnum('customer_tier', customerTiers);

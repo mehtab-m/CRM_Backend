@@ -7,6 +7,21 @@ import { orderStatuses } from '../../db/schema/index.js';
 const orderIdSchema = z.object({ id: z.string().uuid() });
 const updateStatusSchema = z.object({ status: z.enum(orderStatuses) });
 
+const orderItemSchema = z.object({
+  productId: z.string().uuid().optional(),
+  productName: z.string().min(1).max(255),
+  qty: z.number().int().min(1),
+  price: z.number().min(0),
+});
+
+const createOrderSchema = z.object({
+  customerId: z.string().uuid(),
+  items: z.array(orderItemSchema).min(1),
+  deliveryAddress: z.string().max(2000).optional(),
+  city: z.string().max(120).optional(),
+  status: z.enum(orderStatuses).optional(),
+});
+
 function handleZodError(error: ZodError, res: Response): void {
   const first = error.issues[0];
   res.status(400).json({ message: first?.message ?? 'Invalid request' });
@@ -19,6 +34,21 @@ export async function getOrders(req: Request, res: Response, next: NextFunction)
     const result = await ordersService.list(req.auth.businessId, status);
     res.json({ orders: result });
   } catch (error) {
+    next(error);
+  }
+}
+
+export async function postOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.auth) throw new AppError(401, 'Unauthorized');
+    const body = createOrderSchema.parse(req.body);
+    const result = await ordersService.create(req.auth.businessId, body);
+    res.status(201).json({ order: result });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      handleZodError(error, res);
+      return;
+    }
     next(error);
   }
 }

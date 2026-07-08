@@ -1,5 +1,5 @@
-import { boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { senderTypeEnum } from './enums.js';
+import { boolean, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { conversationStatusEnum, senderTypeEnum } from './enums.js';
 import { businesses } from './businesses.js';
 import { customers } from './customers.js';
 
@@ -11,6 +11,8 @@ export const conversations = pgTable('conversations', {
   customerId: uuid('customer_id')
     .notNull()
     .references(() => customers.id, { onDelete: 'cascade' }),
+  status: conversationStatusEnum('status').notNull().default('active'),
+  unreadCount: integer('unread_count').notNull().default(0),
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

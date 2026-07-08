@@ -1,8 +1,8 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { AppError } from '../../common/AppError.js';
 import { db } from '../../db/client.js';
 import { conversations, customers, messages } from '../../db/schema/index.js';
-import type { Conversation, Message } from '../../db/schema/index.js';
+import type { Conversation, ConversationStatus, Message } from '../../db/schema/index.js';
 
 export interface ConversationDto {
   id: string;
@@ -10,6 +10,9 @@ export interface ConversationDto {
   customerId: string;
   customerName?: string;
   customerPhone: string;
+  status: ConversationStatus;
+  unreadCount: number;
+  lastMessage?: string;
   lastMessageAt?: string;
   createdAt: string;
 }
@@ -23,13 +26,21 @@ export interface MessageDto {
   createdAt: string;
 }
 
-function toConversationDto(c: Conversation, customerName?: string | null, customerPhone?: string): ConversationDto {
+function toConversationDto(
+  c: Conversation,
+  customerName?: string | null,
+  customerPhone?: string,
+  lastMessage?: string | null,
+): ConversationDto {
   return {
     id: c.id,
     businessId: c.businessId,
     customerId: c.customerId,
     customerName: customerName ?? undefined,
     customerPhone: customerPhone ?? '',
+    status: c.status,
+    unreadCount: c.unreadCount,
+    lastMessage: lastMessage ?? undefined,
     lastMessageAt: c.lastMessageAt?.toISOString(),
     createdAt: c.createdAt.toISOString(),
   };
@@ -52,12 +63,27 @@ export class ConversationsService {
     return businessId;
   }
 
+  private async getScopedConversation(bid: string, conversationId: string): Promise<Conversation> {
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(and(eq(conversations.id, conversationId), eq(conversations.businessId, bid)))
+      .limit(1);
+    if (!conv) throw new AppError(404, 'Conversation not found');
+    return conv;
+  }
+
   async list(businessId: string | null): Promise<ConversationDto[]> {
     const bid = this.assertBusinessId(businessId);
     const rows = await db
       .select({
         conversation: conversations,
         customer: customers,
+        lastMessage: sql<string | null>`(
+          select ${messages.content} from ${messages}
+          where ${messages.conversationId} = ${conversations.id}
+          order by ${messages.createdAt} desc limit 1
+        )`,
       })
       .from(conversations)
       .leftJoin(customers, eq(conversations.customerId, customers.id))
@@ -65,19 +91,41 @@ export class ConversationsService {
       .orderBy(desc(conversations.lastMessageAt));
 
     return rows.map((r) =>
-      toConversationDto(r.conversation, r.customer?.name, r.customer?.phoneNumber)
+      toConversationDto(r.conversation, r.customer?.name, r.customer?.phoneNumber, r.lastMessage)
     );
+  }
+
+  // Returns the existing conversation for a customer, or creates one.
+  async getOrCreate(businessId: string | null, customerId: string): Promise<ConversationDto> {
+    const bid = this.assertBusinessId(businessId);
+
+    const [customer] = await db
+      .select()
+      .from(customers)
+      .where(and(eq(customers.id, customerId), eq(customers.businessId, bid)))
+      .limit(1);
+    if (!customer) throw new AppError(404, 'Customer not found');
+
+    const [existing] = await db
+      .select()
+      .from(conversations)
+      .where(and(eq(conversations.customerId, customerId), eq(conversations.businessId, bid)))
+      .limit(1);
+    if (existing) {
+      return toConversationDto(existing, customer.name, customer.phoneNumber);
+    }
+
+    const [created] = await db
+      .insert(conversations)
+      .values({ businessId: bid, customerId, status: 'active', unreadCount: 0 })
+      .returning();
+
+    return toConversationDto(created, customer.name, customer.phoneNumber);
   }
 
   async getMessages(businessId: string | null, conversationId: string): Promise<MessageDto[]> {
     const bid = this.assertBusinessId(businessId);
-
-    const [conv] = await db
-      .select()
-      .from(conversations)
-      .where(and(eq(conversations.id, conversationId), eq(conversations.businessId, bid)))
-      .limit(1);
-    if (!conv) throw new AppError(404, 'Conversation not found');
+    await this.getScopedConversation(bid, conversationId);
 
     const rows = await db
       .select()
@@ -90,13 +138,7 @@ export class ConversationsService {
 
   async sendMessage(businessId: string | null, conversationId: string, content: string): Promise<MessageDto> {
     const bid = this.assertBusinessId(businessId);
-
-    const [conv] = await db
-      .select()
-      .from(conversations)
-      .where(and(eq(conversations.id, conversationId), eq(conversations.businessId, bid)))
-      .limit(1);
-    if (!conv) throw new AppError(404, 'Conversation not found');
+    await this.getScopedConversation(bid, conversationId);
 
     const [msg] = await db
       .insert(messages)
@@ -114,6 +156,49 @@ export class ConversationsService {
       .where(eq(conversations.id, conversationId));
 
     return toMessageDto(msg);
+  }
+
+  // Clears the unread badge when the agent opens a conversation.
+  async markRead(businessId: string | null, conversationId: string): Promise<ConversationDto> {
+    const bid = this.assertBusinessId(businessId);
+    const conv = await this.getScopedConversation(bid, conversationId);
+
+    const [updated] = await db
+      .update(conversations)
+      .set({ unreadCount: 0 })
+      .where(eq(conversations.id, conversationId))
+      .returning();
+
+    const [customer] = await db
+      .select({ name: customers.name, phoneNumber: customers.phoneNumber })
+      .from(customers)
+      .where(eq(customers.id, conv.customerId))
+      .limit(1);
+
+    return toConversationDto(updated, customer?.name, customer?.phoneNumber);
+  }
+
+  async updateStatus(
+    businessId: string | null,
+    conversationId: string,
+    status: ConversationStatus,
+  ): Promise<ConversationDto> {
+    const bid = this.assertBusinessId(businessId);
+    const conv = await this.getScopedConversation(bid, conversationId);
+
+    const [updated] = await db
+      .update(conversations)
+      .set({ status })
+      .where(eq(conversations.id, conversationId))
+      .returning();
+
+    const [customer] = await db
+      .select({ name: customers.name, phoneNumber: customers.phoneNumber })
+      .from(customers)
+      .where(eq(customers.id, conv.customerId))
+      .limit(1);
+
+    return toConversationDto(updated, customer?.name, customer?.phoneNumber);
   }
 }
 

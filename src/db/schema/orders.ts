@@ -1,4 +1,4 @@
-import { decimal, integer, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { decimal, integer, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { orderStatusEnum } from './enums.js';
 import { businesses } from './businesses.js';
 import { customers } from './customers.js';
@@ -14,6 +14,8 @@ export const orders = pgTable('orders', {
     .references(() => customers.id, { onDelete: 'cascade' }),
   status: orderStatusEnum('status').notNull().default('new'),
   totalAmount: decimal('total_amount', { precision: 12, scale: 2 }).notNull(),
+  deliveryAddress: text('delivery_address'),
+  city: varchar('city', { length: 120 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()

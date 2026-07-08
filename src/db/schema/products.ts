@@ -17,6 +17,8 @@ export const products = pgTable('products', {
   category: varchar('category', { length: 100 }).notNull(),
   description: text('description'),
   imageUrl: text('image_url'),
+  // Up to 5 image URLs uploaded from device. imageUrl mirrors images[0] for back-compat.
+  images: jsonb('images').$type<string[]>(),
   price: integer('price').notNull(),
   stock: integer('stock').notNull().default(0),
   status: productStatusEnum('status').notNull().default('active'),
