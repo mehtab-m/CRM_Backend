@@ -1,17 +1,15 @@
 /**
- * One-off bootstrap: creates or updates a platform superadmin.
- * Run from server directory: npm run add-superadmin
- * Requires DATABASE_URL and JWT_SECRET in .env (same as the API server).
- *
- * Rotate the password after first login in production; avoid committing real secrets.
+ * Seeds the CRM_Owner account.
+ * Run: npm run add-superadmin
+ * Requires DATABASE_URL and JWT_SECRET in .env
  */
 import { db, pool } from '../src/db/client.js';
-import { users } from '../src/db/schema.js';
+import { users } from '../src/db/schema/index.js';
 import { hashPassword } from '../src/lib/password.js';
 
-const FULL_NAME = 'Mehtab';
-const EMAIL = 'mehtab@whatsappcrm.local';
-const PASSWORD = 'SuperAdmin123';
+const FULL_NAME = 'CRM Owner';
+const EMAIL = 'meh@gmail.com';
+const PASSWORD = 'Kiahalmalik@1122';
 
 async function main(): Promise<void> {
   const email = EMAIL.toLowerCase();
@@ -23,7 +21,7 @@ async function main(): Promise<void> {
       email,
       passwordHash,
       fullName: FULL_NAME,
-      role: 'superadmin',
+      role: 'crm_owner',
       businessId: null,
       isActive: true,
     })
@@ -32,13 +30,13 @@ async function main(): Promise<void> {
       set: {
         passwordHash,
         fullName: FULL_NAME,
-        role: 'superadmin',
+        role: 'crm_owner',
         businessId: null,
         isActive: true,
       },
     });
 
-  console.log(`Superadmin ready: ${email}`);
+  console.log(`CRM_Owner ready: ${email}`);
   console.log(`Login with email "${email}" and the configured password.`);
 }
 

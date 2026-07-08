@@ -15,6 +15,13 @@
       "when": 1783326336183,
       "tag": "0001_melodic_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783494826513,
+      "tag": "0002_mute_hex",
+      "breakpoints": true
     }
   ]
 }

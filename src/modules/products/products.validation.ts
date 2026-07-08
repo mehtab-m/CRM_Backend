@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { productStatuses } from '../../db/schema.js';
+import { productStatuses } from '../../db/schema/index.js';
 
 const variantsSchema = z
   .object({

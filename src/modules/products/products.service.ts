@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { AppError } from '../../common/AppError.js';
 import { db } from '../../db/client.js';
-import { products } from '../../db/schema.js';
+import { products } from '../../db/schema/index.js';
 import { toProductDto, type ProductDto } from './products.mapper.js';
 import type { CreateProductBody, UpdateProductBody } from './products.validation.js';
 

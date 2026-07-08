@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../common/AppError.js';
 import { db, isUniqueViolation } from '../../db/client.js';
-import { businesses, users } from '../../db/schema.js';
+import { businesses, users } from '../../db/schema/index.js';
 import { signAccessToken } from '../../lib/jwt.js';
 import { hashPassword, verifyPassword } from '../../lib/password.js';
 import { toAuthUser, type AuthUserDto } from './auth.mapper.js';
@@ -53,7 +53,7 @@ export class AuthService {
             passwordHash,
             fullName: body.fullName,
             phone: body.phone ?? null,
-            role: 'admin',
+            role: 'business_owner',
             businessId: business.id,
           })
           .returning();

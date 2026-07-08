@@ -1,4 +1,4 @@
-import type { UserRole } from '../../db/schema.js';
+import type { UserRole } from '../../db/schema/index.js';
 
 export interface AuthUserDto {
   email: string;

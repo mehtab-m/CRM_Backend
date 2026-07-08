@@ -1,4 +1,4 @@
-import type { Product } from '../../db/schema.js';
+import type { Product } from '../../db/schema/index.js';
 
 export interface ProductDto {
   id: string;

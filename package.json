@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "add-superadmin": "tsx scripts/add-superadmin.ts"
+    "add-superadmin": "tsx scripts/add-superadmin.ts",
+    "seed:owner": "tsx scripts/add-superadmin.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
