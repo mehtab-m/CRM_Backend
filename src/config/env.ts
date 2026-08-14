@@ -13,6 +13,10 @@ const envSchema = z.object({
     .regex(/^\d+(ms|s|m|h|d|w|y)?$/, 'Use a value like 7d, 12h, or 3600')
     .default('7d'),
   CORS_ORIGIN: z.string().optional(),
+
+  BREVO_API_KEY: z.string().min(1, 'BREVO_API_KEY is required'),
+  BREVO_SENDER_EMAIL: z.string().email('BREVO_SENDER_EMAIL must be a valid email'),
+  BREVO_SENDER_NAME: z.string().min(1).default('WhatsApp CRM'),
 });
 
 export type Env = z.infer<typeof envSchema>;

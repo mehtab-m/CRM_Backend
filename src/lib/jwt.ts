@@ -40,3 +40,46 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     businessId: decoded.businessId ?? null,
   };
 }
+
+export interface PasswordResetTokenPayload {
+  sub: string;
+  otpId: string;
+  purpose: 'password-reset';
+}
+
+export function signPasswordResetToken(
+  payload: PasswordResetTokenPayload,
+): string {
+  return jwt.sign(
+    {
+      sub: payload.sub,
+      otpId: payload.otpId,
+      purpose: payload.purpose,
+    },
+    env.JWT_SECRET,
+    {
+      expiresIn: '10m',
+    },
+  );
+}
+
+
+export function verifyPasswordResetToken(
+  token: string,
+): PasswordResetTokenPayload {
+  const decoded = jwt.verify(token, env.JWT_SECRET) as jwt.JwtPayload;
+
+  if (
+    typeof decoded.sub !== 'string' ||
+    typeof decoded.otpId !== 'string' ||
+    decoded.purpose !== 'password-reset'
+  ) {
+    throw new Error('Invalid password reset token');
+  }
+
+  return {
+    sub: decoded.sub,
+    otpId: decoded.otpId,
+    purpose: 'password-reset',
+  };
+}

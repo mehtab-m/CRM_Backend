@@ -2,7 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { AppError } from '../../common/AppError.js';
 import { authService } from './auth.service.js';
-import { loginBodySchema, registerBodySchema } from './auth.validation.js';
+import {loginBodySchema, registerBodySchema, changePasswordBodySchema, forgotPasswordBodySchema,verifyResetOtpBodySchema, resetPasswordBodySchema,} from './auth.validation.js';
+
 
 function handleZodError(error: ZodError, res: Response): void {
   const first = error.issues[0];
@@ -51,4 +52,93 @@ export async function getMe(req: Request, res: Response, next: NextFunction): Pr
 
 export function postLogout(_req: Request, res: Response): void {
   res.status(204).send();
+}
+
+export async function postChangePassword(req: Request, res: Response, next: NextFunction,): Promise<void> {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, 'Unauthorized');
+    }
+
+    const body = changePasswordBodySchema.parse(req.body);
+
+    await authService.changePassword(req.auth.sub, body);
+
+    res.json({
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      handleZodError(error, res);
+      return;
+    }
+
+    next(error);
+  }
+}
+
+
+export async function postForgotPassword(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = forgotPasswordBodySchema.parse(req.body);
+
+    const result = await authService.forgotPassword(body);
+
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      handleZodError(error, res);
+      return;
+    }
+
+    next(error);
+  }
+}
+
+export async function postVerifyResetOtp(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = verifyResetOtpBodySchema.parse(req.body);
+
+    const result = await authService.verifyResetOtp(body);
+
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      handleZodError(error, res);
+      return;
+    }
+
+    next(error);
+  }
+}
+
+export async function postResetPassword(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = resetPasswordBodySchema.parse(req.body);
+
+    await authService.resetPassword(body);
+
+    res.json({
+      message: 'Password reset successfully',
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      handleZodError(error, res);
+      return;
+    }
+
+    next(error);
+  }
 }
