@@ -2,12 +2,13 @@ import type { Request, Response, NextFunction } from 'express';
 import { ZodError, z } from 'zod';
 import { AppError } from '../../common/AppError.js';
 import { conversationsService } from './conversations.service.js';
-import { conversationStatuses } from '../../db/schema/index.js';
+import { conversationModes, conversationStatuses } from '../../db/schema/index.js';
 
 const conversationIdSchema = z.object({ id: z.string().uuid() });
 const sendMessageSchema = z.object({ content: z.string().min(1) });
 const createConversationSchema = z.object({ customerId: z.string().uuid() });
 const updateStatusSchema = z.object({ status: z.enum(conversationStatuses) });
+const updateModeSchema = z.object({ mode: z.enum(conversationModes) });
 
 function handleZodError(error: ZodError, res: Response): void {
   const first = error.issues[0];
@@ -91,6 +92,22 @@ export async function patchConversationStatus(req: Request, res: Response, next:
     const { id } = conversationIdSchema.parse(req.params);
     const { status } = updateStatusSchema.parse(req.body);
     const result = await conversationsService.updateStatus(req.auth.businessId, id, status);
+    res.json({ conversation: result });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      handleZodError(error, res);
+      return;
+    }
+    next(error);
+  }
+}
+
+export async function patchConversationMode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.auth) throw new AppError(401, 'Unauthorized');
+    const { id } = conversationIdSchema.parse(req.params);
+    const { mode } = updateModeSchema.parse(req.body);
+    const result = await conversationsService.updateMode(req.auth.businessId, id, mode);
     res.json({ conversation: result });
   } catch (error) {
     if (error instanceof ZodError) {

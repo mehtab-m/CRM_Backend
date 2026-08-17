@@ -13,6 +13,7 @@ import { businessesRouter } from './modules/businesses/businesses.routes.js';
 import { crmOwnerRouter } from './modules/crm-owner/crm-owner.routes.js';
 import { categoriesRouter } from './modules/categories/categories.routes.js';
 import { uploadsRouter, uploadsDir } from './modules/uploads/uploads.routes.js';
+import { automationRouter } from './modules/automation/automation.routes.js';
 
 export function createApp(): express.Application {
   const app = express();
@@ -45,6 +46,7 @@ export function createApp(): express.Application {
   app.use('/api/team', teamRouter);
   app.use('/api/businesses', businessesRouter);
   app.use('/api/crm-owner', crmOwnerRouter);
+  app.use('/api/automation', automationRouter);
 
   app.use(errorHandler);
   return app;

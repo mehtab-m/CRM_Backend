@@ -20,6 +20,13 @@ export const conversationStatuses = ['active', 'pending', 'resolved'] as const;
 export type ConversationStatus = (typeof conversationStatuses)[number];
 export const conversationStatusEnum = pgEnum('conversation_status', conversationStatuses);
 
+// auto = AI agent replies automatically. manual = agent must reply, AI stays
+// silent. assist = AI stays silent for now too (suggestion UI is a future
+// enhancement); functionally identical to manual until that ships.
+export const conversationModes = ['auto', 'manual', 'assist'] as const;
+export type ConversationMode = (typeof conversationModes)[number];
+export const conversationModeEnum = pgEnum('conversation_mode', conversationModes);
+
 // Backend stores 'vip'; the frontend relabels it to "Premium".
 export const customerTiers = ['new', 'regular', 'vip'] as const;
 export type CustomerTier = (typeof customerTiers)[number];

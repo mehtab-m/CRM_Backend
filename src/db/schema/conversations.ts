@@ -1,5 +1,5 @@
 import { boolean, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { conversationStatusEnum, senderTypeEnum } from './enums.js';
+import { conversationModeEnum, conversationStatusEnum, senderTypeEnum } from './enums.js';
 import { businesses } from './businesses.js';
 import { customers } from './customers.js';
 
@@ -12,6 +12,8 @@ export const conversations = pgTable('conversations', {
     .notNull()
     .references(() => customers.id, { onDelete: 'cascade' }),
   status: conversationStatusEnum('status').notNull().default('active'),
+  // Controls whether the AI agent auto-replies to this specific conversation.
+  mode: conversationModeEnum('mode').notNull().default('auto'),
   unreadCount: integer('unread_count').notNull().default(0),
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

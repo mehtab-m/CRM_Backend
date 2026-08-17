@@ -1,8 +1,9 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { AppError } from '../../common/AppError.js';
 import { db } from '../../db/client.js';
-import { conversations, customers, messages } from '../../db/schema/index.js';
-import type { Conversation, ConversationStatus, Message } from '../../db/schema/index.js';
+import { businesses, conversations, customers, messages } from '../../db/schema/index.js';
+import type { Conversation, ConversationMode, ConversationStatus, Message } from '../../db/schema/index.js';
+import { sendWhatsAppTextMessage } from '../../lib/whatsapp.js';
 
 export interface ConversationDto {
   id: string;
@@ -11,6 +12,7 @@ export interface ConversationDto {
   customerName?: string;
   customerPhone: string;
   status: ConversationStatus;
+  mode: ConversationMode;
   unreadCount: number;
   lastMessage?: string;
   lastMessageAt?: string;
@@ -39,6 +41,7 @@ function toConversationDto(
     customerName: customerName ?? undefined,
     customerPhone: customerPhone ?? '',
     status: c.status,
+    mode: c.mode,
     unreadCount: c.unreadCount,
     lastMessage: lastMessage ?? undefined,
     lastMessageAt: c.lastMessageAt?.toISOString(),
@@ -138,7 +141,7 @@ export class ConversationsService {
 
   async sendMessage(businessId: string | null, conversationId: string, content: string): Promise<MessageDto> {
     const bid = this.assertBusinessId(businessId);
-    await this.getScopedConversation(bid, conversationId);
+    const conv = await this.getScopedConversation(bid, conversationId);
 
     const [msg] = await db
       .insert(messages)
@@ -154,6 +157,40 @@ export class ConversationsService {
       .update(conversations)
       .set({ lastMessageAt: new Date() })
       .where(eq(conversations.id, conversationId));
+
+    // Deliver the reply to the customer's WhatsApp. Non-fatal: the message
+    // is already recorded in the CRM even if the business hasn't connected
+    // WhatsApp yet or the Graph API call fails.
+    const [business] = await db
+      .select({
+        whatsappPhoneNumberId: businesses.whatsappPhoneNumberId,
+        whatsappAccessToken: businesses.whatsappAccessToken,
+      })
+      .from(businesses)
+      .where(eq(businesses.id, bid))
+      .limit(1);
+
+    if (business?.whatsappPhoneNumberId && business.whatsappAccessToken) {
+      const [customer] = await db
+        .select({ phoneNumber: customers.phoneNumber })
+        .from(customers)
+        .where(eq(customers.id, conv.customerId))
+        .limit(1);
+
+      if (customer) {
+        const result = await sendWhatsAppTextMessage(
+          {
+            phoneNumberId: business.whatsappPhoneNumberId,
+            accessToken: business.whatsappAccessToken,
+          },
+          customer.phoneNumber,
+          content,
+        );
+        if (!result.ok) {
+          console.error(`Failed to deliver WhatsApp message for conversation ${conversationId}: ${result.error}`);
+        }
+      }
+    }
 
     return toMessageDto(msg);
   }
@@ -196,6 +233,29 @@ export class ConversationsService {
       .select({ name: customers.name, phoneNumber: customers.phoneNumber })
       .from(customers)
       .where(eq(customers.id, conv.customerId))
+      .limit(1);
+
+    return toConversationDto(updated, customer?.name, customer?.phoneNumber);
+  }
+
+  async updateMode(
+    businessId: string | null,
+    conversationId: string,
+    mode: ConversationMode,
+  ): Promise<ConversationDto> {
+    const bid = this.assertBusinessId(businessId);
+    await this.getScopedConversation(bid, conversationId);
+
+    const [updated] = await db
+      .update(conversations)
+      .set({ mode })
+      .where(eq(conversations.id, conversationId))
+      .returning();
+
+    const [customer] = await db
+      .select({ name: customers.name, phoneNumber: customers.phoneNumber })
+      .from(customers)
+      .where(eq(customers.id, updated.customerId))
       .limit(1);
 
     return toConversationDto(updated, customer?.name, customer?.phoneNumber);

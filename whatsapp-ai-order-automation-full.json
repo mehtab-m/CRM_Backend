@@ -3,6 +3,18 @@
   "nodes": [
     {
       "parameters": {
+        "content": "## Setup\n1. Open the **Config** node and set `backendBaseUrl` to your deployed CRM backend's public URL (no trailing slash), and `whatsappVerifyToken` to a value you also enter in Meta's WhatsApp webhook config.\n2. Create an **HTTP Header Auth** credential named `Automation API Secret` — Header Name = `X-Automation-Secret`, Value = the same string as `AUTOMATION_API_SECRET` in the backend's `.env`. Attach it to every node calling `/api/automation/*`.\n3. Create/select an **OpenAI** credential on the `AI Generate Response` node.\n4. (Optional) Create an **HTTP Header Auth** credential named `Brevo API` — Header Name = `api-key`, Value = your `BREVO_API_KEY` — for order-notification emails.\n5. Activate the workflow, copy the production webhook URL, and paste it into Meta's WhatsApp App → Configuration → Webhook.\n\nOne deployment of this workflow serves every business on the platform — it resolves the right business per incoming message by WhatsApp `phone_number_id`, which each business enters in CRM Settings → WhatsApp Integration.",
+        "height": 420,
+        "width": 460
+      },
+      "id": "note1",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, -40]
+    },
+    {
+      "parameters": {
         "httpMethod": ["GET", "POST"],
         "path": "whatsapp-webhook",
         "responseMode": "responseNode",
@@ -12,8 +24,35 @@
       "name": "WhatsApp Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 400],
+      "position": [0, 420],
       "webhookId": "whatsapp-incoming"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-base-url",
+              "name": "backendBaseUrl",
+              "value": "https://YOUR-BACKEND-URL",
+              "type": "string"
+            },
+            {
+              "id": "cfg-verify-token",
+              "name": "whatsappVerifyToken",
+              "value": "YOUR_WHATSAPP_VERIFY_TOKEN",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 420]
     },
     {
       "parameters": {
@@ -34,7 +73,28 @@
       "name": "IF Meta Verification",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [220, 400]
+      "position": [440, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "vt1",
+              "leftValue": "={{ $json.query['hub.verify_token'] }}",
+              "rightValue": "={{ $node['Config'].json.whatsappVerifyToken }}",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "2b",
+      "name": "IF Verify Token Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 260]
     },
     {
       "parameters": {
@@ -46,17 +106,29 @@
       "name": "Respond Verification Challenge",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [440, 300]
+      "position": [880, 180]
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\nconst entry = body.entry?.[0];\nconst change = entry?.changes?.[0]?.value;\nconst message = change?.messages?.[0];\nconst phoneNumberId = change?.metadata?.phone_number_id;\nconst from = message?.from;\nconst text = message?.text?.body || '';\nconst messageId = message?.id || '';\n\nif (!message) {\n  return [{ json: { skip: true } }];\n}\n\nreturn [{\n  json: { phoneNumberId, from, text, messageId, skip: false }\n}];"
+        "respondWith": "text",
+        "responseBody": "Forbidden",
+        "options": { "responseCode": 403 }
+      },
+      "id": "3b",
+      "name": "Respond Verification Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [880, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst entry = body?.entry?.[0];\nconst change = entry?.changes?.[0]?.value;\nconst message = change?.messages?.[0];\nconst phoneNumberId = change?.metadata?.phone_number_id;\nconst from = message?.from;\nconst messageId = message?.id || '';\nconst type = message?.type || 'text';\nconst isMedia = type !== 'text';\nconst rawText = type === 'text' ? (message?.text?.body || '') : '';\n\nif (!message) {\n  return [{ json: { skip: true } }];\n}\n\nreturn [{\n  json: {\n    phoneNumberId,\n    from,\n    text: isMedia ? `[Customer sent a ${type} message - please reply manually in the CRM]` : rawText,\n    isMedia,\n    messageId,\n    skip: false,\n  },\n}];"
       },
       "id": "4",
       "name": "Parse Incoming Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 500]
+      "position": [660, 480]
     },
     {
       "parameters": { "respondWith": "noData", "options": {} },
@@ -64,14 +136,19 @@
       "name": "Ack Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [660, 500]
+      "position": [880, 480]
     },
     {
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
           "conditions": [
-            { "id": "s1", "leftValue": "={{ $json.skip }}", "rightValue": true, "operator": { "type": "boolean", "operation": "notEquals" } }
+            {
+              "id": "s1",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEquals" }
+            }
           ],
           "combinator": "and"
         }
@@ -80,117 +157,192 @@
       "name": "IF Valid Message",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [880, 500]
+      "position": [1100, 480]
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT 1 FROM processed_messages WHERE message_id = $1 LIMIT 1;",
-        "options": { "queryReplacement": "={{ [$json.messageId] }}" }
+        "method": "POST",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/dedupe",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"messageId\": $json.messageId } }}",
+        "options": { "timeout": 10000 }
       },
       "id": "7",
-      "name": "Check Duplicate",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [1100, 420],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
+      "name": "Dedupe Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 480],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
     },
     {
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
-            { "id": "d1", "leftValue": "={{ $json.length }}", "rightValue": 0, "operator": { "type": "number", "operation": "equals" } }
+            {
+              "id": "d1",
+              "leftValue": "={{ $json.alreadyProcessed }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEquals" }
+            }
           ],
           "combinator": "and"
         }
       },
       "id": "8",
-      "name": "IF Not Duplicate",
+      "name": "IF Not Already Processed",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1320, 420]
+      "position": [1540, 480]
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO processed_messages (message_id, created_at) VALUES ($1, now());",
-        "options": { "queryReplacement": "={{ [$node['Parse Incoming Message'].json.messageId] }}" }
-      },
-      "id": "9",
-      "name": "Mark Message Processed",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [1540, 340],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT id, name, whatsapp_token, notify_email FROM clients WHERE phone_number_id = $1 LIMIT 1;",
-        "options": { "queryReplacement": "={{ [$node['Parse Incoming Message'].json.phoneNumberId] }}" }
+        "method": "GET",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/business-by-phone/{{ $node['Parse Incoming Message'].json.phoneNumberId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "timeout": 10000 }
       },
       "id": "10",
-      "name": "Lookup Client",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [1760, 340],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
+      "name": "Business Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 400],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
     },
     {
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
-            { "id": "cl1", "leftValue": "={{ $json.length }}", "rightValue": 0, "operator": { "type": "number", "operation": "notEquals" } }
+            {
+              "id": "cl1",
+              "leftValue": "={{ $json.business?.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
           ],
           "combinator": "and"
         }
       },
       "id": "11",
-      "name": "IF Client Found",
+      "name": "IF Business Found",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1980, 340]
+      "position": [1980, 400]
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT name, price, description FROM products WHERE client_id = $1 AND is_active = true;",
-        "options": { "queryReplacement": "={{ [$node['Lookup Client'].json.id] }}" }
+        "method": "POST",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/customers/find-or-create",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"businessId\": $node['Business Lookup'].json.business.id, \"phoneNumber\": $node['Parse Incoming Message'].json.from } }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "cust1",
+      "name": "Find or Create Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 320],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/conversations/find-or-create",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"businessId\": $node['Business Lookup'].json.business.id, \"customerId\": $json.customer.id } }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "conv1",
+      "name": "Find or Create Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 320],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"conversationId\": $json.conversation.id, \"senderType\": \"customer\", \"content\": $node['Parse Incoming Message'].json.text } }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "msg1",
+      "name": "Save Inbound Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 320],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const conversation = $node['Find or Create Conversation'].json.conversation;\nconst business = $node['Business Lookup'].json.business;\nconst parsed = $node['Parse Incoming Message'].json;\n\nconst shouldReply = conversation?.mode === 'auto' && business?.aiAutoReplyEnabled === true && !parsed.isMedia;\n\nreturn [{ json: { shouldReply } }];"
+      },
+      "id": "sar1",
+      "name": "Should AI Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "sar2",
+              "leftValue": "={{ $json.shouldReply }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "sar3",
+      "name": "IF Should AI Reply",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3080, 320]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [{ "name": "businessId", "value": "={{ $node['Business Lookup'].json.business.id }}" }]
+        },
+        "options": { "timeout": 10000 }
       },
       "id": "12",
-      "name": "Get Client Products",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [2200, 260],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT role, content FROM conversation_history WHERE client_id = $1 AND customer_phone = $2 ORDER BY created_at DESC LIMIT 10;",
-        "options": { "queryReplacement": "={{ [$node['Lookup Client'].json.id, $node['Parse Incoming Message'].json.from] }}" }
-      },
-      "id": "13",
-      "name": "Get Conversation History",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [2420, 260],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO conversation_history (client_id, customer_phone, role, content, created_at) VALUES ($1, $2, 'user', $3, now());",
-        "options": { "queryReplacement": "={{ [$node['Lookup Client'].json.id, $node['Parse Incoming Message'].json.from, $node['Parse Incoming Message'].json.text] }}" }
-      },
-      "id": "14",
-      "name": "Save User Message",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [2640, 260],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
+      "name": "Get Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3300, 220],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
     },
     {
       "parameters": {
@@ -199,7 +351,7 @@
           "values": [
             {
               "role": "system",
-              "content": "=You are a sales assistant for {{ $node['Lookup Client'].json.name }}. Available products (JSON): {{ JSON.stringify($node['Get Client Products'].json) }}. Recent conversation: {{ JSON.stringify($node['Get Conversation History'].json) }}. Reply ONLY with valid JSON, no extra text, in this exact shape: {\"reply\": \"<message to send customer>\", \"order_confirmed\": false, \"order\": {\"items\": [{\"product\": \"\", \"qty\": 0, \"price\": 0}], \"total\": 0}}. Set order_confirmed to true only when the customer has explicitly confirmed a final order."
+              "content": "=You are a sales assistant for {{ $node['Business Lookup'].json.business.name }}. {{ $node['Business Lookup'].json.business.aiInstructions ? $node['Business Lookup'].json.business.aiInstructions : 'Be polite, helpful, and accurate.' }} Available products (JSON, source of truth - never invent products or prices not in this list): {{ JSON.stringify($node['Get Products'].json.products) }}. Recent conversation history: {{ JSON.stringify($node['Find or Create Conversation'].json.conversation.recentMessages) }}. Reply ONLY with valid JSON, no extra text, in this exact shape: {\"reply\": \"<message to send the customer>\", \"order_confirmed\": false, \"order\": {\"items\": [{\"productName\": \"\", \"qty\": 0, \"price\": 0}], \"total\": 0, \"deliveryAddress\": \"\", \"city\": \"\"}}. Set order_confirmed to true only once the customer has explicitly confirmed a final order including what they want to buy."
             },
             {
               "role": "user",
@@ -213,7 +365,7 @@
       "name": "AI Generate Response",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [2860, 260],
+      "position": [3520, 220],
       "credentials": { "openAiApi": { "id": "2", "name": "OpenAI Account" } }
     },
     {
@@ -224,44 +376,48 @@
       "name": "Parse AI JSON Safely",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3080, 260]
+      "position": [3740, 220]
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO conversation_history (client_id, customer_phone, role, content, created_at) VALUES ($1, $2, 'assistant', $3, now());",
-        "options": { "queryReplacement": "={{ [$node['Lookup Client'].json.id, $node['Parse Incoming Message'].json.from, $json.reply] }}" }
+        "method": "POST",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"conversationId\": $node['Find or Create Conversation'].json.conversation.id, \"senderType\": \"ai\", \"content\": $json.reply } }}",
+        "options": { "timeout": 10000 }
       },
       "id": "17",
       "name": "Save AI Message",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [3300, 260],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3960, 220],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/v20.0/{{ $node['Parse Incoming Message'].json.phoneNumberId }}/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $node['Lookup Client'].json.whatsapp_token }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $node['Business Lookup'].json.business.whatsappAccessToken }}" },
             { "name": "Content-Type", "value": "application/json" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"messaging_product\": \"whatsapp\", \"to\": $node['Parse Incoming Message'].json.from, \"text\": { \"body\": $json.reply } } }}",
+        "jsonBody": "={{ { \"messaging_product\": \"whatsapp\", \"to\": $node['Parse Incoming Message'].json.from, \"text\": { \"body\": $node['Parse AI JSON Safely'].json.reply } } }}",
         "options": { "timeout": 10000 }
       },
       "id": "18",
       "name": "Send WhatsApp Reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3520, 260],
+      "position": [4180, 220],
       "onError": "continueRegularOutput"
     },
     {
@@ -269,7 +425,12 @@
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
           "conditions": [
-            { "id": "oc1", "leftValue": "={{ $node['Parse AI JSON Safely'].json.order_confirmed }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }
+            {
+              "id": "oc1",
+              "leftValue": "={{ $node['Parse AI JSON Safely'].json.order_confirmed }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
           ],
           "combinator": "and"
         }
@@ -278,94 +439,121 @@
       "name": "IF Order Confirmed",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [3740, 260]
+      "position": [4400, 220]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://YOUR-BACKEND-URL/api/orders",
+        "url": "={{ $node['Config'].json.backendBaseUrl }}/api/automation/orders",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"clientId\": $node['Lookup Client'].json.id, \"customerPhone\": $node['Parse Incoming Message'].json.from, \"items\": $node['Parse AI JSON Safely'].json.order.items, \"total\": $node['Parse AI JSON Safely'].json.order.total } }}",
+        "jsonBody": "={{ { \"businessId\": $node['Business Lookup'].json.business.id, \"customerId\": $node['Find or Create Customer'].json.customer.id, \"items\": $node['Parse AI JSON Safely'].json.order.items, \"deliveryAddress\": $node['Parse AI JSON Safely'].json.order.deliveryAddress, \"city\": $node['Parse AI JSON Safely'].json.order.city } }}",
         "options": { "timeout": 10000 }
       },
       "id": "20",
-      "name": "Create Order in DB",
+      "name": "Create Order",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3960, 180],
-      "onError": "continueRegularOutput"
+      "position": [4620, 140],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "3", "name": "Automation API Secret" } }
     },
     {
       "parameters": {
-        "fromEmail": "orders@yourdomain.com",
-        "toEmail": "={{ $node['Lookup Client'].json.notify_email }}",
-        "subject": "=New Order - {{ $node['Lookup Client'].json.name }}",
-        "text": "=New order received from {{ $node['Parse Incoming Message'].json.from }}.\n\nItems: {{ JSON.stringify($node['Parse AI JSON Safely'].json.order.items) }}\nTotal: {{ $node['Parse AI JSON Safely'].json.order.total }}",
-        "options": {}
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "ne1",
+              "leftValue": "={{ $node['Business Lookup'].json.business.notifyEmail }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "ne2",
+      "name": "IF Has Notify Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [4840, 140]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.brevo.com/v3/smtp/email",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"sender\": { \"email\": \"orders@yourdomain.com\", \"name\": $node['Business Lookup'].json.business.name }, \"to\": [ { \"email\": $node['Business Lookup'].json.business.notifyEmail } ], \"subject\": \"New WhatsApp order - \" + $node['Business Lookup'].json.business.name, \"htmlContent\": \"<p>New order from \" + $node['Parse Incoming Message'].json.from + \"</p><p>Items: \" + JSON.stringify($node['Parse AI JSON Safely'].json.order.items) + \"</p><p>Total: \" + $node['Parse AI JSON Safely'].json.order.total + \"</p>\" } }}",
+        "options": { "timeout": 10000 }
       },
       "id": "21",
-      "name": "Email Client Notification",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [4180, 180],
-      "credentials": { "smtp": { "id": "4", "name": "SMTP Account" } }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO error_logs (source, payload, created_at) VALUES ($1, $2, now());",
-        "options": { "queryReplacement": "={{ ['client_not_found', JSON.stringify($json)] }}" }
-      },
-      "id": "22",
-      "name": "Log Client Not Found",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
-      "position": [2200, 460],
-      "credentials": { "postgres": { "id": "1", "name": "Neon Postgres" } }
+      "name": "Email Order Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [5060, 140],
+      "onError": "continueRegularOutput",
+      "credentials": { "httpHeaderAuth": { "id": "5", "name": "Brevo API" } }
     }
   ],
   "connections": {
     "WhatsApp Webhook": {
+      "main": [[{ "node": "Config", "type": "main", "index": 0 }]]
+    },
+    "Config": {
       "main": [[{ "node": "IF Meta Verification", "type": "main", "index": 0 }]]
     },
     "IF Meta Verification": {
       "main": [
-        [{ "node": "Respond Verification Challenge", "type": "main", "index": 0 }],
+        [{ "node": "IF Verify Token Valid", "type": "main", "index": 0 }],
         [{ "node": "Parse Incoming Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF Verify Token Valid": {
+      "main": [
+        [{ "node": "Respond Verification Challenge", "type": "main", "index": 0 }],
+        [{ "node": "Respond Verification Failed", "type": "main", "index": 0 }]
       ]
     },
     "Parse Incoming Message": {
       "main": [[{ "node": "Ack Webhook", "type": "main", "index": 0 }, { "node": "IF Valid Message", "type": "main", "index": 0 }]]
     },
     "IF Valid Message": {
-      "main": [[{ "node": "Check Duplicate", "type": "main", "index": 0 }], []]
+      "main": [[{ "node": "Dedupe Check", "type": "main", "index": 0 }], []]
     },
-    "Check Duplicate": {
-      "main": [[{ "node": "IF Not Duplicate", "type": "main", "index": 0 }]]
+    "Dedupe Check": {
+      "main": [[{ "node": "IF Not Already Processed", "type": "main", "index": 0 }]]
     },
-    "IF Not Duplicate": {
-      "main": [[{ "node": "Mark Message Processed", "type": "main", "index": 0 }], []]
+    "IF Not Already Processed": {
+      "main": [[{ "node": "Business Lookup", "type": "main", "index": 0 }], []]
     },
-    "Mark Message Processed": {
-      "main": [[{ "node": "Lookup Client", "type": "main", "index": 0 }]]
+    "Business Lookup": {
+      "main": [[{ "node": "IF Business Found", "type": "main", "index": 0 }]]
     },
-    "Lookup Client": {
-      "main": [[{ "node": "IF Client Found", "type": "main", "index": 0 }]]
+    "IF Business Found": {
+      "main": [[{ "node": "Find or Create Customer", "type": "main", "index": 0 }], []]
     },
-    "IF Client Found": {
-      "main": [
-        [{ "node": "Get Client Products", "type": "main", "index": 0 }],
-        [{ "node": "Log Client Not Found", "type": "main", "index": 0 }]
-      ]
+    "Find or Create Customer": {
+      "main": [[{ "node": "Find or Create Conversation", "type": "main", "index": 0 }]]
     },
-    "Get Client Products": {
-      "main": [[{ "node": "Get Conversation History", "type": "main", "index": 0 }]]
+    "Find or Create Conversation": {
+      "main": [[{ "node": "Save Inbound Message", "type": "main", "index": 0 }]]
     },
-    "Get Conversation History": {
-      "main": [[{ "node": "Save User Message", "type": "main", "index": 0 }]]
+    "Save Inbound Message": {
+      "main": [[{ "node": "Should AI Reply", "type": "main", "index": 0 }]]
     },
-    "Save User Message": {
+    "Should AI Reply": {
+      "main": [[{ "node": "IF Should AI Reply", "type": "main", "index": 0 }]]
+    },
+    "IF Should AI Reply": {
+      "main": [[{ "node": "Get Products", "type": "main", "index": 0 }], []]
+    },
+    "Get Products": {
       "main": [[{ "node": "AI Generate Response", "type": "main", "index": 0 }]]
     },
     "AI Generate Response": {
@@ -381,13 +569,13 @@
       "main": [[{ "node": "IF Order Confirmed", "type": "main", "index": 0 }]]
     },
     "IF Order Confirmed": {
-      "main": [
-        [{ "node": "Create Order in DB", "type": "main", "index": 0 }],
-        []
-      ]
+      "main": [[{ "node": "Create Order", "type": "main", "index": 0 }], []]
     },
-    "Create Order in DB": {
-      "main": [[{ "node": "Email Client Notification", "type": "main", "index": 0 }]]
+    "Create Order": {
+      "main": [[{ "node": "IF Has Notify Email", "type": "main", "index": 0 }]]
+    },
+    "IF Has Notify Email": {
+      "main": [[{ "node": "Email Order Notification", "type": "main", "index": 0 }], []]
     }
   }
 }

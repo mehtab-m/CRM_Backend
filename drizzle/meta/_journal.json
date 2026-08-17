@@ -36,6 +36,13 @@
       "when": 1786692729049,
       "tag": "0004_fresh_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786979730657,
+      "tag": "0005_wandering_venus",
+      "breakpoints": true
     }
   ]
 }

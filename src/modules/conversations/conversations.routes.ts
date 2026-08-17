@@ -3,6 +3,7 @@ import { requireAuth, requireRole } from '../../middleware/auth.middleware.js';
 import {
   getConversations,
   getMessages,
+  patchConversationMode,
   patchConversationRead,
   patchConversationStatus,
   postConversation,
@@ -20,3 +21,4 @@ conversationsRouter.get('/:id/messages', getMessages);
 conversationsRouter.post('/:id/messages', postMessage);
 conversationsRouter.patch('/:id/read', patchConversationRead);
 conversationsRouter.patch('/:id/status', patchConversationStatus);
+conversationsRouter.patch('/:id/mode', patchConversationMode);

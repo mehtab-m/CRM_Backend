@@ -44,7 +44,7 @@ uploadsRouter.post(
   '/',
   canUpload,
   (req: Request, res: Response, next: NextFunction) => {
-    upload.array('images', 5)(req, res, (err: unknown) => {
+    upload.array('files', 5)(req, res, (err: unknown) => {
       if (err instanceof MulterError) {
         res.status(400).json({ message: err.message });
         return;

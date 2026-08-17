@@ -9,6 +9,8 @@ const updateBusinessSchema = z.object({
   whatsappAccessToken: z.string().optional(),
   whatsappBusinessAccountId: z.string().optional(),
   notifyEmail: z.union([z.string().email(), z.literal('')]).optional(),
+  aiInstructions: z.string().max(4000).optional(),
+  aiAutoReplyEnabled: z.boolean().optional(),
 });
 
 function handleZodError(error: ZodError, res: Response): void {
@@ -37,6 +39,16 @@ export async function patchBusinessSettings(req: Request, res: Response, next: N
       handleZodError(error, res);
       return;
     }
+    next(error);
+  }
+}
+
+export async function getTestWhatsappConnection(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.auth) throw new AppError(401, 'Unauthorized');
+    const result = await businessesService.testWhatsappConnection(req.auth.businessId);
+    res.json(result);
+  } catch (error) {
     next(error);
   }
 }
